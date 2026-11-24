@@ -36,7 +36,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-loja_pass}
       SPRING_JPA_HIBERNATE_DDL_AUTO: validate
       SPRING_FLYWAY_ENABLED: "true"
-      APP_STAGE: DEV
+      APP_STAGE: LOCAL
       JWT_SECRET: ${JWT_SECRET:-ecpelotas-loja-alcateia-dev-jwt-secret-1908-pelotas-local}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:7995}

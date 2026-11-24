@@ -19,21 +19,21 @@ class LojaApiApplicationTests {
     private MockMvc mockMvc;
 
     @Test
-    @DisplayName("Health check deve retornar 200 UP e stage DEV nos testes")
+    @DisplayName("Health check deve retornar 200 UP e stage LOCAL nos testes locais")
     void shouldReturnHealthUp() throws Exception {
         mockMvc.perform(get("/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"))
                 .andExpect(jsonPath("$.healthy").value(true))
-                .andExpect(jsonPath("$.stage").value("DEV"));
+                .andExpect(jsonPath("$.stage").value("LOCAL"));
     }
 
     @Test
-    @DisplayName("Endpoint /auth/env-test deve retornar stage DEV em ambiente nao-prod")
-    void shouldReturnEnvTestDev() throws Exception {
+    @DisplayName("Endpoint /auth/env-test deve retornar stage LOCAL em ambiente local")
+    void shouldReturnEnvTestLocal() throws Exception {
         mockMvc.perform(get("/auth/env-test"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.stage").value("DEV"))
-                .andExpect(jsonPath("$.environment").value("development"));
+                .andExpect(jsonPath("$.stage").value("LOCAL"))
+                .andExpect(jsonPath("$.environment").value("local"));
     }
 }

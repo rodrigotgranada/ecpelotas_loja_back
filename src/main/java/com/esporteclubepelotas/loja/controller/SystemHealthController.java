@@ -26,36 +26,45 @@ public class SystemHealthController {
 
     @GetMapping("/")
     public ResponseEntity<Map<String, Object>> root() {
+        String stage = resolveStage();
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "UP");
         response.put("service", "Loja Oficial Alcateia - API Java (Spring Boot 3)");
         response.put("club", "Esporte Clube Pelotas");
-        response.put("stage", resolveIsProdStage() ? "PROD" : "DEV");
+        response.put("stage", stage);
         response.put("timestamp", Instant.now().toString());
         return ResponseEntity.ok(response);
     }
 
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> health() {
+        String stage = resolveStage();
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "UP");
         response.put("healthy", true);
-        response.put("stage", resolveIsProdStage() ? "PROD" : "DEV");
+        response.put("stage", stage);
         response.put("timestamp", Instant.now().toString());
         return ResponseEntity.ok(response);
     }
 
     @GetMapping("/auth/env-test")
     public ResponseEntity<Map<String, Object>> envTest() {
-        boolean isProd = resolveIsProdStage();
+        String stage = resolveStage();
+        String environmentLabel = switch (stage) {
+            case "PROD" -> "production";
+            case "DEV" -> "development";
+            default -> "local";
+        };
+
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("stage", isProd ? "PROD" : "DEV");
-        response.put("environment", isProd ? "production" : "development");
+        response.put("stage", stage);
+        response.put("environment", environmentLabel);
+        response.put("databaseLabel", "LOCAL".equals(stage) ? "PostgreSQL Local (5434)" : "Neon PostgreSQL (" + stage + ")");
         response.put("storageProvider", "firebase");
         return ResponseEntity.ok(response);
     }
 
-    private boolean resolveIsProdStage() {
+    private String resolveStage() {
         String explicitStage = firstNonBlank(
                 environment.getProperty("app.stage"),
                 environment.getProperty("APP_STAGE"),
@@ -63,14 +72,16 @@ public class SystemHealthController {
                 environment.getProperty("APP_ENV"));
         if (explicitStage != null) {
             String normalized = explicitStage.trim().toLowerCase(Locale.ROOT);
+            if ("local".equals(normalized)) {
+                return "LOCAL";
+            }
             if ("prod".equals(normalized) || "production".equals(normalized)) {
-                return true;
+                return "PROD";
             }
             if ("dev".equals(normalized) || "development".equals(normalized)
                     || "staging".equals(normalized) || "homolog".equals(normalized)
-                    || "preview".equals(normalized) || "local".equals(normalized)
-                    || "test".equals(normalized)) {
-                return false;
+                    || "preview".equals(normalized) || "test".equals(normalized)) {
+                return "DEV";
             }
         }
 
@@ -79,40 +90,38 @@ public class SystemHealthController {
                 environment.getProperty("GIT_BRANCH"));
         if (gitBranch != null) {
             String branchLower = gitBranch.trim().toLowerCase(Locale.ROOT);
-            if (!"main".equals(branchLower) && !"master".equals(branchLower)) {
-                return false;
-            }
+            return ("main".equals(branchLower) || "master".equals(branchLower)) ? "PROD" : "DEV";
         }
 
         String renderService = firstNonBlank(
                 environment.getProperty("RENDER_SERVICE_NAME"),
                 environment.getProperty("RENDER_EXTERNAL_HOSTNAME"));
-        if (containsAnyMarker(renderService, "-dev", "dev-", "develop", "homolog", "staging", "preview")) {
-            return false;
+        if (renderService != null) {
+            return containsAnyMarker(renderService, "-dev", "dev-", "develop", "homolog", "staging", "preview")
+                    ? "DEV"
+                    : "PROD";
         }
 
         boolean hasProdProfile = environment.acceptsProfiles(Profiles.of("prod"))
                 || (activeProfile != null && activeProfile.toLowerCase(Locale.ROOT).contains("prod"));
-        if (!hasProdProfile) {
-            return false;
-        }
 
-        String firebaseProject = firstNonBlank(
-                environment.getProperty("firebase.project-id"),
-                environment.getProperty("firebase.storage-bucket"));
-        if (containsAnyMarker(firebaseProject, "dev", "homolog", "staging", "local", "test")) {
-            return false;
+        String datasourceUrl = environment.getProperty("spring.datasource.url");
+        if (!hasProdProfile || containsAnyMarker(datasourceUrl,
+                "localhost", "127.0.0.1", "jdbc:h2", "jdbc:postgresql://postgres:", "ecpelotas_loja_local")) {
+            return "LOCAL";
         }
 
         String frontendUrl = environment.getProperty("frontend.url");
         if (containsAnyMarker(frontendUrl,
-                "localhost", "127.0.0.1", "dev.", "-dev", "_dev", "-git-develop", "homolog", "staging")) {
-            return false;
+                "dev.", "-dev", "_dev", "-git-develop", "homolog", "staging")) {
+            return "DEV";
         }
 
-        String datasourceUrl = environment.getProperty("spring.datasource.url");
-        return !containsAnyMarker(datasourceUrl,
-                "localhost", "127.0.0.1", "ecpelotas_loja_local", "loja_dev", "_dev", "-dev", "homolog", "staging");
+        if (containsAnyMarker(datasourceUrl, "loja_dev", "_dev", "-dev", "homolog", "staging")) {
+            return "DEV";
+        }
+
+        return "PROD";
     }
 
     private static String firstNonBlank(String... values) {
