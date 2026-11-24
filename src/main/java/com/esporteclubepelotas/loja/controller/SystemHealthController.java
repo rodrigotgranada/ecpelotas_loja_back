@@ -59,7 +59,8 @@ public class SystemHealthController {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("stage", stage);
         response.put("environment", environmentLabel);
-        response.put("databaseLabel", "LOCAL".equals(stage) ? "PostgreSQL Local (5434)" : "Neon PostgreSQL (" + stage + ")");
+        response.put("databaseLabel",
+                "LOCAL".equals(stage) ? "PostgreSQL Local (5434)" : "Neon PostgreSQL (" + stage + ")");
         response.put("storageProvider", "firebase");
         return ResponseEntity.ok(response);
     }
@@ -125,7 +126,8 @@ public class SystemHealthController {
     }
 
     private static String firstNonBlank(String... values) {
-        if (values == null) return null;
+        if (values == null)
+            return null;
         for (String value : values) {
             if (value != null && !value.isBlank()) {
                 return value;
@@ -135,7 +137,8 @@ public class SystemHealthController {
     }
 
     private static boolean containsAnyMarker(String value, String... markers) {
-        if (value == null || value.isBlank()) return false;
+        if (value == null || value.isBlank())
+            return false;
         String lower = value.toLowerCase(Locale.ROOT);
         for (String marker : markers) {
             if (lower.contains(marker)) {
