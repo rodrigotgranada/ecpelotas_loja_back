@@ -19,7 +19,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.nio.charset.StandardCharsets;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -227,5 +227,51 @@ class CatalogAndInvoiceIntegrationTest {
                         .file(xmlFile)
                         .header("Authorization", ownerToken))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Deve cadastrar colaborador exclusivo da Loja e autenticar localmente sem depender do Portal")
+    void shouldCreateLocalStaffAndLoginWithoutPortal() throws Exception {
+        String ownerToken = loginWithRole("portal-owner-staff", "00000000002", "OWNER");
+        reset(portalIntegrationClient);
+
+        String createStaffPayload = """
+                {
+                  "fullName": "Vendedor Balcao Local",
+                  "email": "vendedor.local@alcateia.com.br",
+                  "cpf": "99988877766",
+                  "role": "SELLER",
+                  "password": "senhaForte123"
+                }
+                """;
+
+        mockMvc.perform(post("/admin/staff")
+                        .header("Authorization", ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createStaffPayload))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.authSource").value("LOCAL"))
+                .andExpect(jsonPath("$.role").value("SELLER"));
+
+        MvcResult loginResult = mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cpf\":\"vendedor.local@alcateia.com.br\",\"password\":\"senhaForte123\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.user.role").value("SELLER"))
+                .andExpect(jsonPath("$.user.authSource").value("LOCAL"))
+                .andReturn();
+
+        verifyNoInteractions(portalIntegrationClient);
+
+        String sellerToken = "Bearer " + objectMapper.readTree(loginResult.getResponse().getContentAsString())
+                .get("accessToken").asText();
+
+        // SELLER acessa catálogo, mas não acessa notas NF-e nem gestão de equipe
+        mockMvc.perform(get("/admin/products").header("Authorization", sellerToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/admin/invoices").header("Authorization", sellerToken))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/admin/staff").header("Authorization", sellerToken))
+                .andExpect(status().isForbidden());
     }
 }

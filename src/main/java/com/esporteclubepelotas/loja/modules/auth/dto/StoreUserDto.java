@@ -6,6 +6,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -17,9 +19,12 @@ public class StoreUserDto {
     private String email;
     private String cpf;
     private String role;
+    private String authSource;
     private boolean isSocioActive;
     private String socioPlanName;
     private boolean active;
+    private Instant lastLoginAt;
+    private Instant createdAt;
 
     public static StoreUserDto fromEntity(StoreUser user) {
         return StoreUserDto.builder()
@@ -29,9 +34,12 @@ public class StoreUserDto {
                 .email(user.getEmail())
                 .cpf(user.getCpf())
                 .role(user.getRole())
+                .authSource(user.getAuthSource())
                 .isSocioActive(user.isSocioActive())
                 .socioPlanName(user.getSocioPlanName())
                 .active(user.isActive())
+                .lastLoginAt(user.getLastLoginAt())
+                .createdAt(user.getCreatedAt())
                 .build();
     }
 }

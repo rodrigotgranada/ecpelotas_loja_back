@@ -21,7 +21,7 @@ public class StoreUser {
     @Column(length = 36)
     private String id;
 
-    @Column(name = "portal_user_id", nullable = false, unique = true, length = 36)
+    @Column(name = "portal_user_id", unique = true, length = 36)
     private String portalUserId;
 
     @Column(name = "full_name", nullable = false, length = 150)
@@ -32,6 +32,13 @@ public class StoreUser {
 
     @Column(length = 20)
     private String cpf;
+
+    @Column(name = "password_hash", length = 120)
+    private String passwordHash;
+
+    @Column(name = "auth_source", nullable = false, length = 20)
+    @Builder.Default
+    private String authSource = "PORTAL";
 
     @Column(nullable = false, length = 30)
     @Builder.Default

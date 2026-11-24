@@ -8,10 +8,12 @@ import com.esporteclubepelotas.loja.modules.auth.entity.StoreUser;
 import com.esporteclubepelotas.loja.modules.auth.repository.StoreUserRepository;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -22,12 +24,35 @@ public class StoreAuthService {
             "OWNER", "ADMIN", "STORE_MANAGER", "SELLER", "STOCK_CLERK"
     );
 
+    private static final Set<String> STORE_SPECIFIC_ROLES = Set.of(
+            "STORE_MANAGER", "SELLER", "STOCK_CLERK"
+    );
+
     private final PortalIntegrationClient portalIntegrationClient;
     private final StoreUserRepository storeUserRepository;
     private final JwtTokenProvider jwtTokenProvider;
+    private final PasswordEncoder passwordEncoder;
 
     @Transactional
     public AuthResponseDto login(LoginRequestDto request) {
+        String identifier = request.getCpf() != null ? request.getCpf().trim() : "";
+        Optional<StoreUser> localMatch = findLocalUserByIdentifier(identifier);
+
+        if (localMatch.isPresent()
+                && "LOCAL".equalsIgnoreCase(localMatch.get().getAuthSource())
+                && localMatch.get().getPasswordHash() != null) {
+            StoreUser localUser = localMatch.get();
+            if (!localUser.isActive()) {
+                throw new UnauthorizedException("Usuário inativo na Loja Oficial.");
+            }
+            if (!passwordEncoder.matches(request.getPassword(), localUser.getPasswordHash())) {
+                throw new UnauthorizedException("Credenciais inválidas na Loja Oficial.");
+            }
+            localUser.setLastLoginAt(Instant.now());
+            StoreUser saved = storeUserRepository.save(localUser);
+            return buildAuthResponse(saved);
+        }
+
         PortalUserSyncDto portalUser = portalIntegrationClient.authenticateWithPortal(request);
         StoreUser storeUser = syncPortalUser(portalUser);
 
@@ -35,12 +60,7 @@ public class StoreAuthService {
             throw new UnauthorizedException("Usuário inativo na Loja Oficial.");
         }
 
-        UserPrincipal principal = toPrincipal(storeUser);
-        return AuthResponseDto.builder()
-                .accessToken(jwtTokenProvider.generateAccessToken(principal))
-                .refreshToken(jwtTokenProvider.generateRefreshToken(principal))
-                .user(StoreUserDto.fromEntity(storeUser))
-                .build();
+        return buildAuthResponse(storeUser);
     }
 
     @Transactional(readOnly = true)
@@ -60,12 +80,7 @@ public class StoreAuthService {
             throw new UnauthorizedException("Sessão expirada.");
         }
 
-        UserPrincipal principal = toPrincipal(user);
-        return AuthResponseDto.builder()
-                .accessToken(jwtTokenProvider.generateAccessToken(principal))
-                .refreshToken(jwtTokenProvider.generateRefreshToken(principal))
-                .user(StoreUserDto.fromEntity(user))
-                .build();
+        return buildAuthResponse(user);
     }
 
     @Transactional(readOnly = true)
@@ -79,17 +94,39 @@ public class StoreAuthService {
         return role != null && ALLOWED_PDV_ROLES.contains(role.toUpperCase());
     }
 
+    private Optional<StoreUser> findLocalUserByIdentifier(String identifier) {
+        if (identifier.isBlank()) {
+            return Optional.empty();
+        }
+        if (identifier.contains("@")) {
+            return storeUserRepository.findByEmailIgnoreCase(identifier);
+        }
+        String digits = identifier.replaceAll("[^0-9]", "");
+        if (digits.isEmpty()) {
+            return Optional.empty();
+        }
+        return storeUserRepository.findByCpf(digits);
+    }
+
     private StoreUser syncPortalUser(PortalUserSyncDto portalUser) {
         StoreUser user = storeUserRepository.findByPortalUserId(portalUser.getPortalUserId())
                 .orElseGet(() -> StoreUser.builder()
                         .portalUserId(portalUser.getPortalUserId())
+                        .authSource("PORTAL")
                         .active(true)
                         .tokenVersion(1)
                         .build());
 
-        String normalizedRole = portalUser.getRole() != null && !portalUser.getRole().isBlank()
+        String portalRole = portalUser.getRole() != null && !portalUser.getRole().isBlank()
                 ? portalUser.getRole().trim().toUpperCase()
                 : "USER";
+
+        String existingRole = user.getRole() != null ? user.getRole().trim().toUpperCase() : "USER";
+        String resolvedRole = portalRole;
+        if (!"OWNER".equals(portalRole) && !"ADMIN".equals(portalRole)
+                && STORE_SPECIFIC_ROLES.contains(existingRole)) {
+            resolvedRole = existingRole;
+        }
 
         String fullName = portalUser.getFullName() != null && !portalUser.getFullName().isBlank()
                 ? portalUser.getFullName().trim()
@@ -97,14 +134,23 @@ public class StoreAuthService {
                         + (portalUser.getLastName() != null ? portalUser.getLastName() : "")).trim();
 
         user.setFullName(fullName.isEmpty() ? "Usuário Portal" : fullName);
-        user.setEmail(portalUser.getEmail());
-        user.setCpf(portalUser.getCpf());
-        user.setRole(normalizedRole);
+        user.setEmail(portalUser.getEmail() != null ? portalUser.getEmail().trim().toLowerCase() : null);
+        user.setCpf(portalUser.getCpf() != null ? portalUser.getCpf().replaceAll("[^0-9]", "") : null);
+        user.setRole(resolvedRole);
         user.setSocioActive(portalUser.isSocioActive() || "ACTIVE".equalsIgnoreCase(portalUser.getSocioStatus()));
         user.setSocioPlanName(portalUser.getSocioPlanName());
         user.setLastLoginAt(Instant.now());
 
         return storeUserRepository.save(user);
+    }
+
+    private AuthResponseDto buildAuthResponse(StoreUser user) {
+        UserPrincipal principal = toPrincipal(user);
+        return AuthResponseDto.builder()
+                .accessToken(jwtTokenProvider.generateAccessToken(principal))
+                .refreshToken(jwtTokenProvider.generateRefreshToken(principal))
+                .user(StoreUserDto.fromEntity(user))
+                .build();
     }
 
     private UserPrincipal toPrincipal(StoreUser user) {
