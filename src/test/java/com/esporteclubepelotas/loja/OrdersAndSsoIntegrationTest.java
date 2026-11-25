@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -171,5 +172,75 @@ class OrdersAndSsoIntegrationTest {
                         .content("{\"portalUserId\":\"portal-socio-100\",\"reason\":\"Desisti no Portal\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELLED"));
+
+        // 6. Nova reserva + Negociação no PDV (2 -> 1 unidade) + Confirmação com 2 pagamentos (Dinheiro + Pix)
+        MvcResult reserve2 = mockMvc.perform(post("/orders/whatsapp-reservation")
+                        .header("Authorization", socioToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"customerWhatsapp\":\"53999998888\",\"items\":[{\"variantId\":\"" + variantId + "\",\"quantity\":2}]}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String code2 = objectMapper.readTree(reserve2.getResponse().getContentAsString())
+                .get("orderCode").asText().replace("#", "");
+
+        mockMvc.perform(put("/admin/orders/" + code2)
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"variantId\":\"" + variantId + "\",\"quantity\":1}],\"discountAmount\":20.00}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("NEGOTIATING"))
+                .andExpect(jsonPath("$.totalAmount").value(150.00));
+
+        // Pagamento errado (soma != 150) deve ser recusado com 400
+        mockMvc.perform(post("/admin/orders/" + code2 + "/confirm")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"payments\":[{\"paymentMethod\":\"PIX\",\"amount\":100.00}]}"))
+                .andExpect(status().isBadRequest());
+
+        // Pagamento dividido R$ 50 Dinheiro + R$ 100 Pix -> baixa físico de 2 -> 1 e registra SALE_OUTBOUND no Kardex
+        mockMvc.perform(post("/admin/orders/" + code2 + "/confirm")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"payments\":[{\"paymentMethod\":\"CASH\",\"amount\":50.00},{\"paymentMethod\":\"PIX\",\"amount\":100.00}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CONFIRMED_PAID"))
+                .andExpect(jsonPath("$.payments.length()").value(2));
+
+        // 7. Venda direta no Balcão ANÔNIMA da última unidade (1 -> 0) dividida Crédito + Pix
+        mockMvc.perform(post("/admin/orders/counter-sale")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "items": [{"variantId": "%s", "quantity": 1}],
+                                  "payments": [
+                                    {"paymentMethod": "CREDIT", "amount": 120.00},
+                                    {"paymentMethod": "PIX", "amount": 80.00}
+                                  ]
+                                }
+                                """.formatted(variantId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.channel").value("STORE_COUNTER"))
+                .andExpect(jsonPath("$.customerType").value("WALK_IN_ANONYMOUS"))
+                .andExpect(jsonPath("$.status").value("CONFIRMED_PAID"));
+
+        // 8. Admin atualiza WhatsApp oficial em /admin/store-settings
+        mockMvc.perform(put("/admin/store-settings")
+                        .header("Authorization", adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "storeName": "Loja Oficial Alcateia",
+                                  "whatsappNumber": "(53) 99123-4567",
+                                  "openHour": "09:00",
+                                  "closeHour": "19:00",
+                                  "workingDays": "MON,TUE,WED,THU,FRI,SAT",
+                                  "reservationTtlMinutes": 180,
+                                  "maxOpenReservationsPerUser": 3
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.whatsappNumber").value("53991234567"));
     }
 }

@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -44,10 +45,42 @@ public interface StoreOrderRepository extends JpaRepository<StoreOrder, String> 
             @Param("portalUserId") String portalUserId
     );
 
+    @Query(
+        value = """
+            SELECT o.id FROM orders o
+            WHERE (:status IS NULL OR o.status = :status)
+              AND (
+                  :search IS NULL
+                  OR LOWER(o.order_code) LIKE LOWER(CONCAT('%', :search, '%'))
+                  OR LOWER(o.customer_name) LIKE LOWER(CONCAT('%', :search, '%'))
+                  OR LOWER(COALESCE(o.customer_cpf, '')) LIKE LOWER(CONCAT('%', :search, '%'))
+                  OR LOWER(COALESCE(o.customer_whatsapp, '')) LIKE LOWER(CONCAT('%', :search, '%'))
+              )
+            """,
+        countQuery = """
+            SELECT COUNT(*) FROM orders o
+            WHERE (:status IS NULL OR o.status = :status)
+              AND (
+                  :search IS NULL
+                  OR LOWER(o.order_code) LIKE LOWER(CONCAT('%', :search, '%'))
+                  OR LOWER(o.customer_name) LIKE LOWER(CONCAT('%', :search, '%'))
+                  OR LOWER(COALESCE(o.customer_cpf, '')) LIKE LOWER(CONCAT('%', :search, '%'))
+                  OR LOWER(COALESCE(o.customer_whatsapp, '')) LIKE LOWER(CONCAT('%', :search, '%'))
+              )
+            """,
+        nativeQuery = true
+    )
+    Page<String> findAdminOrderIds(
+            @Param("status") String status,
+            @Param("search") String search,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = {"items"})
+    List<StoreOrder> findAllByIdIn(Collection<String> ids);
+
     @EntityGraph(attributePaths = {"items"})
     List<StoreOrder> findByStatusAndExpiresAtBefore(String status, Instant expiresAt);
 
     boolean existsByOrderCode(String orderCode);
-
-    Page<StoreOrder> findByStatusOrderByCreatedAtDesc(String status, Pageable pageable);
 }

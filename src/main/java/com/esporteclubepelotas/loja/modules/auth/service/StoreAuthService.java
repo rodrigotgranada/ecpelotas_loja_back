@@ -24,12 +24,10 @@ import java.util.Set;
 public class StoreAuthService {
 
     private static final Set<String> ALLOWED_PDV_ROLES = Set.of(
-            "OWNER", "ADMIN", "STORE_MANAGER", "SELLER", "STOCK_CLERK"
-    );
+            "OWNER", "ADMIN", "STORE_MANAGER", "SELLER", "STOCK_CLERK");
 
     private static final Set<String> STORE_SPECIFIC_ROLES = Set.of(
-            "STORE_MANAGER", "SELLER", "STOCK_CLERK"
-    );
+            "STORE_MANAGER", "SELLER", "STOCK_CLERK");
 
     private final PortalIntegrationClient portalIntegrationClient;
     private final PortalSsoTokenValidator portalSsoTokenValidator;
@@ -50,7 +48,8 @@ public class StoreAuthService {
             return authenticateLocalAccount(localMatch.get(), request.getPassword());
         }
 
-        // 2. Usuário do Portal — tenta S2S primeiro; se Portal API cair, usa cache em store_users ou fallback READ-ONLY
+        // 2. Usuário do Portal — tenta S2S primeiro; se Portal API cair, usa cache em
+        // store_users ou fallback READ-ONLY
         try {
             PortalUserSyncDto portalUser = portalIntegrationClient.authenticateWithPortal(request);
             StoreUser synced = syncPortalUser(portalUser, request.getPassword());
@@ -114,8 +113,7 @@ public class StoreAuthService {
     private AuthResponseDto authenticateWithPortalOfflineFallbacks(
             LoginRequestDto request,
             Optional<StoreUser> localMatch,
-            BusinessException originalError
-    ) {
+            BusinessException originalError) {
         if (localMatch.isPresent() && localMatch.get().getPortalVerifierHash() != null) {
             StoreUser cached = localMatch.get();
             ensureUserActive(cached);
@@ -129,7 +127,8 @@ public class StoreAuthService {
 
         Optional<PortalUserSyncDto> readonlyUser = portalReadonlyFallbackService.authenticateReadonlyFallback(request);
         if (readonlyUser.isPresent()) {
-            log.info("Autenticado via fallback READ-ONLY do banco do Portal para {}", readonlyUser.get().getPortalUserId());
+            log.info("Autenticado via fallback READ-ONLY do banco do Portal para {}",
+                    readonlyUser.get().getPortalUserId());
             StoreUser synced = syncPortalUser(readonlyUser.get(), request.getPassword());
             ensureUserActive(synced);
             return buildAuthResponse(synced);

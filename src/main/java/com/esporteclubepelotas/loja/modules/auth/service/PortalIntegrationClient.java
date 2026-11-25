@@ -42,8 +42,7 @@ public class PortalIntegrationClient {
                 || portalInternalApiKey == null || portalInternalApiKey.isBlank()) {
             throw new BusinessException(
                     "Integração S2S com o Portal não configurada (PORTAL_API_URL / PORTAL_INTERNAL_API_KEY).",
-                    HttpStatus.SERVICE_UNAVAILABLE
-            );
+                    HttpStatus.SERVICE_UNAVAILABLE);
         }
 
         String url = portalApiUrl.trim().replaceAll("/+$", "") + "/integrations/store/authenticate";
@@ -56,8 +55,7 @@ public class PortalIntegrationClient {
                     url,
                     HttpMethod.POST,
                     new HttpEntity<>(request, headers),
-                    PortalUserSyncDto.class
-            );
+                    PortalUserSyncDto.class);
             if (response.getBody() == null || response.getBody().getPortalUserId() == null) {
                 throw new UnauthorizedException("Falha ao validar usuário no Portal.");
             }
@@ -70,7 +68,8 @@ public class PortalIntegrationClient {
             throw new BusinessException("Erro ao validar credenciais no Portal.", HttpStatus.BAD_GATEWAY);
         } catch (ResourceAccessException ex) {
             log.error("Portal S2S inacessível em {}: {}", url, ex.getMessage());
-            throw new BusinessException("Portal indisponível no momento para autenticação.", HttpStatus.SERVICE_UNAVAILABLE);
+            throw new BusinessException("Portal indisponível no momento para autenticação.",
+                    HttpStatus.SERVICE_UNAVAILABLE);
         }
     }
 
@@ -98,8 +97,7 @@ public class PortalIntegrationClient {
                     url,
                     HttpMethod.GET,
                     new HttpEntity<>(headers),
-                    MemberStatusDto.class
-            );
+                    MemberStatusDto.class);
             return Optional.ofNullable(response.getBody());
         } catch (RestClientException ex) {
             log.warn("Consulta de Sócio no Portal falhou (usando cache local se disponível): {}", ex.getMessage());

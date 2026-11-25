@@ -3,6 +3,7 @@ package com.esporteclubepelotas.loja.modules.orders.service;
 import com.esporteclubepelotas.loja.common.exception.BusinessException;
 import com.esporteclubepelotas.loja.common.exception.ResourceNotFoundException;
 import com.esporteclubepelotas.loja.common.security.UserPrincipal;
+import com.esporteclubepelotas.loja.common.websocket.StoreWebSocketHandler;
 import com.esporteclubepelotas.loja.modules.auth.entity.StoreUser;
 import com.esporteclubepelotas.loja.modules.auth.repository.StoreUserRepository;
 import com.esporteclubepelotas.loja.modules.auth.service.PortalIntegrationClient;
@@ -39,6 +40,7 @@ public class OrderReservationService {
     private final BusinessHoursTtlService businessHoursTtlService;
     private final WhatsappSummaryFormatterService summaryFormatterService;
     private final PortalIntegrationClient portalIntegrationClient;
+    private final StoreWebSocketHandler webSocketHandler;
 
     @Transactional
     public OrderResponseDto createWhatsappReservation(CreateWhatsappReservationDto request, UserPrincipal principal) {
@@ -145,6 +147,7 @@ public class OrderReservationService {
                 .build());
 
         StoreOrder saved = orderRepository.save(order);
+        webSocketHandler.broadcastAfterCommit("orders", "CREATED", saved.getOrderCode());
         return OrderResponseDto.fromEntity(saved, settings.getWhatsappNumber(), false);
     }
 

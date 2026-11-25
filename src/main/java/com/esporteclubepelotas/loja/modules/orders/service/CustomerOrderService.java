@@ -3,6 +3,7 @@ package com.esporteclubepelotas.loja.modules.orders.service;
 import com.esporteclubepelotas.loja.common.exception.BusinessException;
 import com.esporteclubepelotas.loja.common.exception.ForbiddenException;
 import com.esporteclubepelotas.loja.common.exception.ResourceNotFoundException;
+import com.esporteclubepelotas.loja.common.websocket.StoreWebSocketHandler;
 import com.esporteclubepelotas.loja.modules.catalog.entity.ProductVariant;
 import com.esporteclubepelotas.loja.modules.catalog.repository.ProductVariantRepository;
 import com.esporteclubepelotas.loja.modules.orders.dto.OrderResponseDto;
@@ -32,6 +33,7 @@ public class CustomerOrderService {
     private final StoreOrderRepository orderRepository;
     private final ProductVariantRepository variantRepository;
     private final StoreSettingsService settingsService;
+    private final StoreWebSocketHandler webSocketHandler;
 
     @Transactional
     public List<OrderResponseDto> listOrdersForCustomer(String storeUserId, String portalUserId, String cpf) {
@@ -76,7 +78,9 @@ public class CustomerOrderService {
                 .description(order.getCancelledReason())
                 .build());
 
-        return OrderResponseDto.fromEntity(orderRepository.save(order), settings.getWhatsappNumber(), true);
+        StoreOrder saved = orderRepository.save(order);
+        webSocketHandler.broadcastAfterCommit("orders", "CANCELLED", saved.getOrderCode());
+        return OrderResponseDto.fromEntity(saved, settings.getWhatsappNumber(), true);
     }
 
     public void releaseReservedStock(StoreOrder order) {
