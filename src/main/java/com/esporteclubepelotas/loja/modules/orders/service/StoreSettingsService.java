@@ -11,14 +11,12 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class StoreSettingsService {
 
-    private static final String DEFAULT_ID = "default";
-
     private final StoreSettingsRepository storeSettingsRepository;
 
     @Transactional
     public StoreSettings getOrCreateDefault() {
-        return storeSettingsRepository.findById(DEFAULT_ID)
-                .orElseGet(() -> storeSettingsRepository.save(StoreSettings.builder().id(DEFAULT_ID).build()));
+        return storeSettingsRepository.findFirstByOrderByIdAsc()
+                .orElseGet(() -> storeSettingsRepository.save(StoreSettings.builder().build()));
     }
 
     @Transactional

@@ -4,25 +4,8 @@
 ALTER TABLE store_users
     ADD COLUMN IF NOT EXISTS portal_verifier_hash VARCHAR(120);
 
-CREATE TABLE IF NOT EXISTS store_settings (
-    id VARCHAR(36) PRIMARY KEY,
-    store_name VARCHAR(120) NOT NULL DEFAULT 'Loja Oficial Alcateia',
-    whatsapp_number VARCHAR(30) NOT NULL DEFAULT '5553999999999',
-    open_hour VARCHAR(5) NOT NULL DEFAULT '09:00',
-    close_hour VARCHAR(5) NOT NULL DEFAULT '19:00',
-    working_days VARCHAR(60) NOT NULL DEFAULT 'MON,TUE,WED,THU,FRI,SAT',
-    reservation_ttl_minutes INT NOT NULL DEFAULT 180,
-    max_open_reservations_per_user INT NOT NULL DEFAULT 2,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-INSERT INTO store_settings (
-    id, store_name, whatsapp_number, open_hour, close_hour, working_days,
-    reservation_ttl_minutes, max_open_reservations_per_user
-) VALUES (
-    'default', 'Loja Oficial Alcateia', '5553999999999', '09:00', '19:00',
-    'MON,TUE,WED,THU,FRI,SAT', 180, 2
-) ON CONFLICT (id) DO NOTHING;
+ALTER TABLE store_settings
+    ADD COLUMN IF NOT EXISTS working_days VARCHAR(60) NOT NULL DEFAULT 'MON,TUE,WED,THU,FRI,SAT';
 
 CREATE TABLE IF NOT EXISTS orders (
     id VARCHAR(36) PRIMARY KEY,

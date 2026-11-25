@@ -1,10 +1,8 @@
 package com.esporteclubepelotas.loja.modules.orders.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.Instant;
@@ -19,11 +17,10 @@ import java.time.Instant;
 public class StoreSettings {
 
     @Id
-    @Column(length = 36)
-    @Builder.Default
-    private String id = "default";
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
-    @Column(name = "store_name", nullable = false, length = 120)
+    @Column(name = "store_name", nullable = false, length = 150)
     @Builder.Default
     private String storeName = "Loja Oficial Alcateia";
 
@@ -31,11 +28,11 @@ public class StoreSettings {
     @Builder.Default
     private String whatsappNumber = "5553999999999";
 
-    @Column(name = "open_hour", nullable = false, length = 5)
+    @Column(name = "business_open_time", nullable = false, length = 5)
     @Builder.Default
     private String openHour = "09:00";
 
-    @Column(name = "close_hour", nullable = false, length = 5)
+    @Column(name = "business_close_time", nullable = false, length = 5)
     @Builder.Default
     private String closeHour = "19:00";
 
@@ -43,13 +40,17 @@ public class StoreSettings {
     @Builder.Default
     private String workingDays = "MON,TUE,WED,THU,FRI,SAT";
 
-    @Column(name = "reservation_ttl_minutes", nullable = false)
+    @Column(name = "reservation_business_hours_ttl_minutes", nullable = false)
     @Builder.Default
     private int reservationTtlMinutes = 180;
 
-    @Column(name = "max_open_reservations_per_user", nullable = false)
+    @Column(name = "max_open_reservations_per_phone", nullable = false)
     @Builder.Default
     private int maxOpenReservationsPerUser = 2;
+
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
 
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
