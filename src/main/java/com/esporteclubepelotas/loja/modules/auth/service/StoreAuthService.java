@@ -1,5 +1,6 @@
 package com.esporteclubepelotas.loja.modules.auth.service;
 
+import com.esporteclubepelotas.loja.common.exception.BusinessException;
 import com.esporteclubepelotas.loja.common.exception.UnauthorizedException;
 import com.esporteclubepelotas.loja.common.security.JwtTokenProvider;
 import com.esporteclubepelotas.loja.common.security.UserPrincipal;
@@ -8,6 +9,7 @@ import com.esporteclubepelotas.loja.modules.auth.entity.StoreUser;
 import com.esporteclubepelotas.loja.modules.auth.repository.StoreUserRepository;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +18,7 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class StoreAuthService {
@@ -29,6 +32,8 @@ public class StoreAuthService {
     );
 
     private final PortalIntegrationClient portalIntegrationClient;
+    private final PortalSsoTokenValidator portalSsoTokenValidator;
+    private final PortalReadonlyFallbackService portalReadonlyFallbackService;
     private final StoreUserRepository storeUserRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final PasswordEncoder passwordEncoder;
@@ -38,29 +43,32 @@ public class StoreAuthService {
         String identifier = request.getCpf() != null ? request.getCpf().trim() : "";
         Optional<StoreUser> localMatch = findLocalUserByIdentifier(identifier);
 
+        // 1. Colaborador exclusivo da Loja (LOCAL) — nunca depende do Portal
         if (localMatch.isPresent()
                 && "LOCAL".equalsIgnoreCase(localMatch.get().getAuthSource())
                 && localMatch.get().getPasswordHash() != null) {
-            StoreUser localUser = localMatch.get();
-            if (!localUser.isActive()) {
-                throw new UnauthorizedException("Usuário inativo na Loja Oficial.");
-            }
-            if (!passwordEncoder.matches(request.getPassword(), localUser.getPasswordHash())) {
-                throw new UnauthorizedException("Credenciais inválidas na Loja Oficial.");
-            }
-            localUser.setLastLoginAt(Instant.now());
-            StoreUser saved = storeUserRepository.save(localUser);
-            return buildAuthResponse(saved);
+            return authenticateLocalAccount(localMatch.get(), request.getPassword());
         }
 
-        PortalUserSyncDto portalUser = portalIntegrationClient.authenticateWithPortal(request);
-        StoreUser storeUser = syncPortalUser(portalUser);
-
-        if (!storeUser.isActive()) {
-            throw new UnauthorizedException("Usuário inativo na Loja Oficial.");
+        // 2. Usuário do Portal — tenta S2S primeiro; se Portal API cair, usa cache em store_users ou fallback READ-ONLY
+        try {
+            PortalUserSyncDto portalUser = portalIntegrationClient.authenticateWithPortal(request);
+            StoreUser synced = syncPortalUser(portalUser, request.getPassword());
+            ensureUserActive(synced);
+            return buildAuthResponse(synced);
+        } catch (UnauthorizedException ex) {
+            throw ex;
+        } catch (BusinessException portalOfflineEx) {
+            return authenticateWithPortalOfflineFallbacks(request, localMatch, portalOfflineEx);
         }
+    }
 
-        return buildAuthResponse(storeUser);
+    @Transactional
+    public AuthResponseDto loginWithSso(String ssoToken) {
+        PortalUserSyncDto portalUser = portalSsoTokenValidator.validateAndExtract(ssoToken);
+        StoreUser synced = syncPortalUser(portalUser, null);
+        ensureUserActive(synced);
+        return buildAuthResponse(synced);
     }
 
     @Transactional(readOnly = true)
@@ -94,6 +102,48 @@ public class StoreAuthService {
         return role != null && ALLOWED_PDV_ROLES.contains(role.toUpperCase());
     }
 
+    private AuthResponseDto authenticateLocalAccount(StoreUser localUser, String rawPassword) {
+        ensureUserActive(localUser);
+        if (!passwordEncoder.matches(rawPassword, localUser.getPasswordHash())) {
+            throw new UnauthorizedException("Credenciais inválidas na Loja Oficial.");
+        }
+        localUser.setLastLoginAt(Instant.now());
+        return buildAuthResponse(storeUserRepository.save(localUser));
+    }
+
+    private AuthResponseDto authenticateWithPortalOfflineFallbacks(
+            LoginRequestDto request,
+            Optional<StoreUser> localMatch,
+            BusinessException originalError
+    ) {
+        if (localMatch.isPresent() && localMatch.get().getPortalVerifierHash() != null) {
+            StoreUser cached = localMatch.get();
+            ensureUserActive(cached);
+            if (!passwordEncoder.matches(request.getPassword(), cached.getPortalVerifierHash())) {
+                throw new UnauthorizedException("Credenciais inválidas (modo contingência offline).");
+            }
+            log.info("Autenticado via cache de contingência store_users para usuário {}", cached.getId());
+            cached.setLastLoginAt(Instant.now());
+            return buildAuthResponse(storeUserRepository.save(cached));
+        }
+
+        Optional<PortalUserSyncDto> readonlyUser = portalReadonlyFallbackService.authenticateReadonlyFallback(request);
+        if (readonlyUser.isPresent()) {
+            log.info("Autenticado via fallback READ-ONLY do banco do Portal para {}", readonlyUser.get().getPortalUserId());
+            StoreUser synced = syncPortalUser(readonlyUser.get(), request.getPassword());
+            ensureUserActive(synced);
+            return buildAuthResponse(synced);
+        }
+
+        throw originalError;
+    }
+
+    private void ensureUserActive(StoreUser user) {
+        if (!user.isActive()) {
+            throw new UnauthorizedException("Usuário inativo na Loja Oficial.");
+        }
+    }
+
     private Optional<StoreUser> findLocalUserByIdentifier(String identifier) {
         if (identifier.isBlank()) {
             return Optional.empty();
@@ -108,7 +158,7 @@ public class StoreAuthService {
         return storeUserRepository.findByCpf(digits);
     }
 
-    private StoreUser syncPortalUser(PortalUserSyncDto portalUser) {
+    private StoreUser syncPortalUser(PortalUserSyncDto portalUser, String rawPasswordForContingencyCache) {
         StoreUser user = storeUserRepository.findByPortalUserId(portalUser.getPortalUserId())
                 .orElseGet(() -> StoreUser.builder()
                         .portalUserId(portalUser.getPortalUserId())
@@ -140,6 +190,10 @@ public class StoreAuthService {
         user.setSocioActive(portalUser.isSocioActive() || "ACTIVE".equalsIgnoreCase(portalUser.getSocioStatus()));
         user.setSocioPlanName(portalUser.getSocioPlanName());
         user.setLastLoginAt(Instant.now());
+
+        if (rawPasswordForContingencyCache != null && !rawPasswordForContingencyCache.isBlank()) {
+            user.setPortalVerifierHash(passwordEncoder.encode(rawPasswordForContingencyCache));
+        }
 
         return storeUserRepository.save(user);
     }

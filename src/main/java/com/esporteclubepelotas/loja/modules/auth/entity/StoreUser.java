@@ -36,6 +36,9 @@ public class StoreUser {
     @Column(name = "password_hash", length = 120)
     private String passwordHash;
 
+    @Column(name = "portal_verifier_hash", length = 120)
+    private String portalVerifierHash;
+
     @Column(name = "auth_source", nullable = false, length = 20)
     @Builder.Default
     private String authSource = "PORTAL";

@@ -40,12 +40,24 @@ public class StoreAuthController {
     private String cookieSameSite;
 
     @PostMapping("/login")
-    @Operation(summary = "Autentica na Loja validando credenciais S2S no Portal")
+    @Operation(summary = "Autentica na Loja validando credenciais locais ou S2S no Portal")
     public ResponseEntity<AuthResponseDto> login(
             @Valid @RequestBody LoginRequestDto request,
             HttpServletResponse response
     ) {
         AuthResponseDto result = storeAuthService.login(request);
+        setRefreshCookie(response, result.getRefreshToken());
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/sso")
+    @Operation(summary = "Troca um token SSO descartável do Portal por sessão JWT na Loja")
+    public ResponseEntity<AuthResponseDto> loginWithSso(
+            @RequestBody Map<String, String> payload,
+            HttpServletResponse response
+    ) {
+        String ssoToken = payload != null ? payload.get("token") : null;
+        AuthResponseDto result = storeAuthService.loginWithSso(ssoToken);
         setRefreshCookie(response, result.getRefreshToken());
         return ResponseEntity.ok(result);
     }
